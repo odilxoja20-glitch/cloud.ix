@@ -1,7 +1,6 @@
 import io
 import os
 import re
-import uvicorn
 from typing import Any, Dict
 
 from authlib.integrations.starlette_client import OAuth
@@ -808,5 +807,9 @@ async def get_fk_verify():
 
 if __name__ == "__main__":
   import uvicorn
+
+  # Читаем PORT из переменных Render (по умолчанию 8000 для локалки)
+  port = int(os.environ.get("PORT", 8000))
+  uvicorn.run(app, host="0.0.0.0", port=port)
 
   uvicorn.run(app, host="127.0.0.1", port=8000)
