@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import uvicorn
 from typing import Any, Dict
 
 from authlib.integrations.starlette_client import OAuth
