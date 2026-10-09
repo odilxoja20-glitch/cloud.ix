@@ -42,8 +42,9 @@ DA_REDIRECT_URI = os.environ.get(
     "DA_REDIRECT_URI", "https://sc5mails.space/auth/donationalerts/callback"
 )
 
-# FREEKASSA CONFIG (sk-2 dlya proverki callback)
+# FREEKASSA CONFIG (sk-1 dlya sozdaniya platezha, sk-2 dlya proverki callback)
 FK_MERCHANT_ID = os.environ.get("FK_MERCHANT_ID", "76722")
+FK_SECRET1 = os.environ.get("sk-1", os.environ.get("FK_SECRET1", ""))
 FK_SECRET2 = os.environ.get("sk-2", os.environ.get("FK_SECRET2", ""))
 
 oauth = OAuth()
@@ -77,53 +78,53 @@ DB_FILE = "bd.txt"
 
 class TextDatabase:
 
-  def __init__(self, filepath: str = DB_FILE):
-    self.filepath = filepath
-    if not os.path.exists(self.filepath):
-      with open(self.filepath, "w", encoding="utf-8") as f:
-        f.write("")
+    def __init__(self, filepath: str = DB_FILE):
+        self.filepath = filepath
+        if not os.path.exists(self.filepath):
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                f.write("")
 
-  def load_all(self) -> Dict[str, Dict[str, Any]]:
-    users = {}
-    if not os.path.exists(self.filepath):
-      return users
+    def load_all(self) -> Dict[str, Dict[str, Any]]:
+        users = {}
+        if not os.path.exists(self.filepath):
+            return users
 
-    with open(self.filepath, "r", encoding="utf-8") as f:
-      content = f.read()
+        with open(self.filepath, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    pattern = (
-        r"(\S+@\S+)\s*\[\s*rate:\s*(\S+)\s*files:\s*(\d+)\s*helped:\s*(\S+)\s*\]"
-    )
-    matches = re.findall(pattern, content)
+        pattern = (
+            r"(\S+@\S+)\s*\[\s*rate:\s*(\S+)\s*files:\s*(\d+)\s*helped:\s*(\S+)\s*\]"
+        )
+        matches = re.findall(pattern, content)
 
-    for email, rate, files, helped in matches:
-      users[email] = {
-          "rate": rate,
-          "files": int(files),
-          "helped": helped.lower() == "true",
-      }
-    return users
+        for email, rate, files, helped in matches:
+            users[email] = {
+                "rate": rate,
+                "files": int(files),
+                "helped": helped.lower() == "true",
+            }
+        return users
 
-  def get_user(self, email: str) -> Dict[str, Any]:
-    users = self.load_all()
-    if email not in users:
-      self.save_user(email, rate="free", files=0, helped=False)
-      return {"rate": "free", "files": 0, "helped": False}
-    return users[email]
+    def get_user(self, email: str) -> Dict[str, Any]:
+        users = self.load_all()
+        if email not in users:
+            self.save_user(email, rate="free", files=0, helped=False)
+            return {"rate": "free", "files": 0, "helped": False}
+        return users[email]
 
-  def save_user(self, email: str, rate: str, files: int, helped: bool):
-    users = self.load_all()
-    users[email] = {"rate": rate, "files": files, "helped": helped}
-    self._write_all(users)
+    def save_user(self, email: str, rate: str, files: int, helped: bool):
+        users = self.load_all()
+        users[email] = {"rate": rate, "files": files, "helped": helped}
+        self._write_all(users)
 
-  def _write_all(self, users: Dict[str, Dict[str, Any]]):
-    with open(self.filepath, "w", encoding="utf-8") as f:
-      for email, data in users.items():
-        f.write(f"{email} [\n")
-        f.write(f"rate: {data['rate']}\n")
-        f.write(f"files: {data['files']}\n")
-        f.write(f"helped: {'true' if data['helped'] else 'false'}\n")
-        f.write("]\n\n")
+    def _write_all(self, users: Dict[str, Dict[str, Any]]):
+        with open(self.filepath, "w", encoding="utf-8") as f:
+            for email, data in users.items():
+                f.write(f"{email} [\n")
+                f.write(f"rate: {data['rate']}\n")
+                f.write(f"files: {data['files']}\n")
+                f.write(f"helped: {'true' if data['helped'] else 'false'}\n")
+                f.write("]\n\n")
 
 
 db = TextDatabase()
@@ -136,33 +137,33 @@ GOOGLE_DRIVE_FOLDER_ID = "1rLqz7WIMqq4piCmuMbs3v4jTGk1IY9KM"
 
 
 def get_drive_service():
-  creds = None
-  token_json_str = os.environ.get("GOOGLE_TOKEN_JSON")
+    creds = None
+    token_json_str = os.environ.get("GOOGLE_TOKEN_JSON")
 
-  if token_json_str:
+    if token_json_str:
+        try:
+            token_data = json.loads(token_json_str)
+            creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+        except Exception as e:
+            print(f"Oshibka parsinga GOOGLE_TOKEN_JSON iz .env: {e}")
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(GoogleRequest())
+            except Exception as e:
+                print(f"Oshibka obnovleniya tokena: {e}")
+                creds = None
+
+    if not creds:
+        print("Ne udalos initsializirovat Google Credentials!")
+        return None
+
     try:
-      token_data = json.loads(token_json_str)
-      creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+        return build("drive", "v3", credentials=creds)
     except Exception as e:
-      print(f"Oshibka parsinga GOOGLE_TOKEN_JSON iz .env: {e}")
-
-  if not creds or not creds.valid:
-    if creds and creds.expired and creds.refresh_token:
-      try:
-        creds.refresh(GoogleRequest())
-      except Exception as e:
-        print(f"Oshibka obnovleniya tokena: {e}")
-        creds = None
-
-  if not creds:
-    print("Ne udalos initsializirovat Google Credentials!")
-    return None
-
-  try:
-    return build("drive", "v3", credentials=creds)
-  except Exception as e:
-    print(f"Oshibka zapuska Google Drive API: {e}")
-    return None
+        print(f"Oshibka zapuska Google Drive API: {e}")
+        return None
 
 
 PLANS = {
@@ -176,20 +177,20 @@ PLANS = {
 
 
 def get_file_visibility_mode(permissions: list) -> str:
-  for perm in permissions:
-    if perm.get("type") == "anyone":
-      if perm.get("allowFileDiscovery"):
-        return "public"
-      return "link"
-  return "restricted"
+    for perm in permissions:
+        if perm.get("type") == "anyone":
+            if perm.get("allowFileDiscovery"):
+                return "public"
+            return "link"
+    return "restricted"
 
 
 @app.get("/", response_class=HTMLResponse)
 async def homepage(request: Request):
-  user = request.session.get("user")
+    user = request.session.get("user")
 
-  if not user:
-    return """
+    if not user:
+        return """
         <!DOCTYPE html>
         <html lang="ru">
         <head>
@@ -218,87 +219,87 @@ async def homepage(request: Request):
         </html>
         """
 
-  user_email = user.get("email", "unknown@user")
-  provider = request.session.get("provider", "OAuth")
+    user_email = user.get("email", "unknown@user")
+    provider = request.session.get("provider", "OAuth")
 
-  user_db_data = db.get_user(user_email)
-  plan_key = user_db_data.get("rate", "free")
+    user_db_data = db.get_user(user_email)
+    plan_key = user_db_data.get("rate", "free")
 
-  current_plan = PLANS.get(plan_key, PLANS["free"])
-  max_storage = current_plan["bytes"]
-  limit_label = current_plan["label"]
+    current_plan = PLANS.get(plan_key, PLANS["free"])
+    max_storage = current_plan["bytes"]
+    limit_label = current_plan["label"]
 
-  status_param = request.query_params.get("status")
-  status_notice = ""
-  if status_param == "success":
-    status_notice = '<div class="bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 p-4 rounded-xl text-xs mb-4"><b>Oplata uspeshno provedena!</b> Tarif obnovlen.</div>'
-  elif status_param == "fail":
-    status_notice = '<div class="bg-red-500/20 border border-red-500/50 text-red-300 p-4 rounded-xl text-xs mb-4"><b>Oshibka oplaty ili otmena.</b> Poprobuyte snova.</div>'
+    status_param = request.query_params.get("status")
+    status_notice = ""
+    if status_param == "success":
+        status_notice = '<div class="bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 p-4 rounded-xl text-xs mb-4"><b>Oplata uspeshno provedena!</b> Tarif obnovlen.</div>'
+    elif status_param == "fail":
+        status_notice = '<div class="bg-red-500/20 border border-red-500/50 text-red-300 p-4 rounded-xl text-xs mb-4"><b>Oshibka oplaty ili otmena.</b> Poprobuyte snova.</div>'
 
-  drive_service = get_drive_service()
-  user_files = []
-  total_used_bytes = 0
-  error_notice = ""
+    drive_service = get_drive_service()
+    user_files = []
+    total_used_bytes = 0
+    error_notice = ""
 
-  if drive_service:
-    try:
-      query = f"'{GOOGLE_DRIVE_FOLDER_ID}' in parents and appProperties has {{ key='owner' and value='{user_email}' }} and trashed = false"
-      results = (
-          drive_service.files()
-          .list(q=query, fields="files(id, name, size, permissions)")
-          .execute()
-      )
-      items = results.get("files", [])
+    if drive_service:
+        try:
+            query = f"'{GOOGLE_DRIVE_FOLDER_ID}' in parents and appProperties has {{ key='owner' and value='{user_email}' }} and trashed = false"
+            results = (
+                drive_service.files()
+                .list(q=query, fields="files(id, name, size, permissions)")
+                .execute()
+            )
+            items = results.get("files", [])
 
-      for item in items:
-        file_size = int(item.get("size", 0))
-        total_used_bytes += file_size
-        size_str = (
-            f"{round(file_size / (1024 * 1024), 2)} MB"
-            if file_size > 1024 * 1024
-            else f"{round(file_size / 1024, 1)} KB"
-        )
-        visibility = get_file_visibility_mode(item.get("permissions", []))
+            for item in items:
+                file_size = int(item.get("size", 0))
+                total_used_bytes += file_size
+                size_str = (
+                    f"{round(file_size / (1024 * 1024), 2)} MB"
+                    if file_size > 1024 * 1024
+                    else f"{round(file_size / 1024, 1)} KB"
+                )
+                visibility = get_file_visibility_mode(item.get("permissions", []))
 
-        user_files.append({
-            "id": item["id"],
-            "name": item["name"],
-            "size": size_str,
-            "visibility": visibility,
-        })
+                user_files.append({
+                    "id": item["id"],
+                    "name": item["name"],
+                    "size": size_str,
+                    "visibility": visibility,
+                })
 
-      db.save_user(
-          user_email,
-          rate=plan_key,
-          files=len(user_files),
-          helped=user_db_data["helped"],
-      )
-    except Exception as e:
-      error_notice = f'<div class="bg-red-500/20 border border-red-500/50 text-red-300 p-4 rounded-xl text-xs mb-4"><b>Oshibka Google Drive API:</b> {str(e)}</div>'
-  else:
-    error_notice = '<div class="bg-amber-500/20 border border-amber-500/50 text-amber-300 p-4 rounded-xl text-xs mb-4">Google Drive API ne nastroen.</div>'
-
-  used_mb = round(total_used_bytes / (1024 * 1024), 2)
-  percent = (
-      min(round((total_used_bytes / max_storage) * 100), 100)
-      if max_storage > 0
-      else 0
-  )
-
-  files_html = ""
-  base_url = str(request.base_url).rstrip("/")
-
-  for f in user_files:
-    download_url = f"{base_url}/download/{f['id']}"
-
-    if f["visibility"] == "public":
-      badge = '<span class="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">🌐 Publichnyy</span>'
-    elif f["visibility"] == "link":
-      badge = '<span class="bg-amber-500/20 text-amber-400 text-[10px] px-2 py-0.5 rounded-full font-bold">🔗 Po ssylke</span>'
+            db.save_user(
+                user_email,
+                rate=plan_key,
+                files=len(user_files),
+                helped=user_db_data["helped"],
+            )
+        except Exception as e:
+            error_notice = f'<div class="bg-red-500/20 border border-red-500/50 text-red-300 p-4 rounded-xl text-xs mb-4"><b>Oshibka Google Drive API:</b> {str(e)}</div>'
     else:
-      badge = '<span class="bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5 rounded-full font-bold">🔒 Privatnyy</span>'
+        error_notice = '<div class="bg-amber-500/20 border border-amber-500/50 text-amber-300 p-4 rounded-xl text-xs mb-4">Google Drive API ne nastroen.</div>'
 
-    files_html += f"""
+    used_mb = round(total_used_bytes / (1024 * 1024), 2)
+    percent = (
+        min(round((total_used_bytes / max_storage) * 100), 100)
+        if max_storage > 0
+        else 0
+    )
+
+    files_html = ""
+    base_url = str(request.base_url).rstrip("/")
+
+    for f in user_files:
+        download_url = f"{base_url}/download/{f['id']}"
+
+        if f["visibility"] == "public":
+            badge = '<span class="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">🌐 Publichnyy</span>'
+        elif f["visibility"] == "link":
+            badge = '<span class="bg-amber-500/20 text-amber-400 text-[10px] px-2 py-0.5 rounded-full font-bold">🔗 Po ssylke</span>'
+        else:
+            badge = '<span class="bg-slate-700 text-slate-300 text-[10px] px-2 py-0.5 rounded-full font-bold">🔒 Privatnyy</span>'
+
+        files_html += f"""
         <div class="bg-slate-800/50 border border-slate-700/50 p-4 rounded-xl mb-3 hover:bg-slate-800/80 transition space-y-3">
             <div class="flex items-center justify-between">
                 <div class="truncate mr-2">
@@ -331,37 +332,39 @@ async def homepage(request: Request):
         </div>
         """
 
-  if not user_files and not error_notice:
-    files_html = '<div class="text-center text-slate-500 py-8 text-sm">U vas poka net zagruzhennykh faylov v Google Drive</div>'
+    if not user_files and not error_notice:
+        files_html = '<div class="text-center text-slate-500 py-8 text-sm">U vas poka net zagruzhennykh faylov v Google Drive</div>'
 
-  plan_badge = (
-      f'<span class="bg-emerald-500/20 text-emerald-400 text-xs px-2.5 py-1'
-      f' rounded-full font-bold ml-2">TARIF: {current_plan["name"].upper()}'
-      f" ({limit_label})</span>"
-      if plan_key != "free"
-      else (
-          '<span class="bg-slate-800 text-slate-400 text-xs px-2.5 py-1'
-          ' rounded-full font-bold ml-2">BAZOVYY (1 GB)</span>'
-      )
-  )
+    plan_badge = (
+        f'<span class="bg-emerald-500/20 text-emerald-400 text-xs px-2.5 py-1'
+        f' rounded-full font-bold ml-2">TARIF: {current_plan["name"].upper()}'
+        f" ({limit_label})</span>"
+        if plan_key != "free"
+        else (
+            '<span class="bg-slate-800 text-slate-400 text-xs px-2.5 py-1'
+            ' rounded-full font-bold ml-2">BAZOVYY (1 GB)</span>'
+        )
+    )
 
-  # IFRAME VIDZHET DLYA TARIFA IZUCHU
-  izuchu_action_html = (
-      '<button disabled class="mt-4 w-full text-xs py-2.5 px-3 rounded-lg'
-      ' font-semibold bg-slate-700 text-slate-500 cursor-not-allowed">Tekushchiy'
-      " tarif</button>"
-      if plan_key == "izuchu"
-      else """
-      <div class="mt-4 flex justify-center">
-          <iframe src="https://widgets.freekassa.net?type=payment-button&currency=RUB&destination=Тариф Изучу&theme=light&default_amount=18&button_text=Оплатить&button_size=36px&shopId=76722&s=14df14d2f7e568e2e5e921a49ca7f17d" width="300" height="50" frameborder="0"></iframe>
-      </div>
-  """
-  )
+    # KNOPKA DLYA OPLATY TARIFA IZUCHU
+    izuchu_action_html = (
+        '<button disabled class="mt-4 w-full text-xs py-2.5 px-3 rounded-lg'
+        ' font-semibold bg-slate-700 text-slate-500 cursor-not-allowed">Tekushchiy'
+        " tarif</button>"
+        if plan_key == "izuchu"
+        else """
+        <form action="/pay/redirect" method="post" class="mt-4 w-full">
+            <button type="submit" class="w-full text-xs py-2.5 px-3 rounded-lg font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-lg shadow-emerald-500/20">
+                Oplatit 18 ₽
+            </button>
+        </form>
+        """
+    )
 
-  user_avatar = user.get("picture") or "https://via.placeholder.com/48"
-  user_name = user.get("name") or user_email.split("@")[0]
+    user_avatar = user.get("picture") or "https://via.placeholder.com/48"
+    user_name = user.get("name") or user_email.split("@")[0]
 
-  return f"""
+    return f"""
     <!DOCTYPE html>
     <html lang="ru">
     <head>
@@ -450,8 +453,8 @@ async def homepage(request: Request):
 
 @app.post("/")
 async def homepage_post(request: Request):
-  status_param = request.query_params.get("status", "success")
-  return RedirectResponse(url=f"/?status={status_param}", status_code=303)
+    status_param = request.query_params.get("status", "success")
+    return RedirectResponse(url=f"/?status={status_param}", status_code=303)
 
 
 # ==========================================
@@ -459,382 +462,402 @@ async def homepage_post(request: Request):
 # ==========================================
 @app.post("/select-plan")
 async def select_plan(request: Request, plan: str = Form(...)):
-  user = request.session.get("user")
-  if not user:
-    raise HTTPException(status_code=401, detail="Avtorizuytes")
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Avtorizuytes")
 
-  user_email = user.get("email", "unknown@user")
+    user_email = user.get("email", "unknown@user")
 
-  if plan == "free":
-    user_db_data = db.get_user(user_email)
-    db.save_user(
-        user_email,
-        rate="free",
-        files=user_db_data["files"],
-        helped=user_db_data["helped"],
-    )
+    if plan == "free":
+        user_db_data = db.get_user(user_email)
+        db.save_user(
+            user_email,
+            rate="free",
+            files=user_db_data["files"],
+            helped=user_db_data["helped"],
+        )
 
-  return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
 
 
 # ==========================================
-# FREEKASSA CALLBACK (OPOVESHCHENIYE)
+# 4. FREEKASSA PAYMENTS (REDIRECT & CALLBACK)
 # ==========================================
+@app.post("/pay/redirect")
+async def pay_redirect(request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Avtorizuytes")
+
+    user_email = user.get("email", "unknown@user")
+    order_id = user_email.replace("@", "_at_")
+    amount = "18"
+    currency = "RUB"
+
+    # Generatsiya podpisi sk-1: md5(merchant_id:amount:secret_1:currency:order_id)
+    sign_str = f"{FK_MERCHANT_ID}:{amount}:{FK_SECRET1}:{currency}:{order_id}"
+    signature = hashlib.md5(sign_str.encode("utf-8")).hexdigest()
+
+    pay_url = f"https://pay.freekassa.ru/?m={FK_MERCHANT_ID}&oa={amount}&o={order_id}&currency={currency}&s={signature}"
+
+    return RedirectResponse(url=pay_url, status_code=303)
+
+
 @app.post("/pay/callback")
 async def pay_callback(
     MERCHANT_ID: str = Form(...),
     AMOUNT: str = Form(...),
-    intid: str = Form(...),
+    intid: str = Form(None),
     MERCHANT_ORDER_ID: str = Form(...),
     SIGN: str = Form(...),
 ):
-  # Proverka sk-2
-  expected_sign_str = f"{MERCHANT_ID}:{AMOUNT}:{FK_SECRET2}:{MERCHANT_ORDER_ID}"
-  expected_sign = hashlib.md5(expected_sign_str.encode()).hexdigest()
+    # Proverka podpisi sk-2: md5(merchant_id:amount:secret_2:order_id)
+    expected_sign_str = f"{MERCHANT_ID}:{AMOUNT}:{FK_SECRET2}:{MERCHANT_ORDER_ID}"
+    expected_sign = hashlib.md5(expected_sign_str.encode("utf-8")).hexdigest()
 
-  if SIGN.lower() != expected_sign.lower():
-    raise HTTPException(
-        status_code=400, detail="Oshibka podpisi FreeKassa (SIGN)"
+    if SIGN.lower() != expected_sign.lower():
+        raise HTTPException(
+            status_code=400, detail="Oshibka podpisi FreeKassa (SIGN)"
+        )
+
+    user_email = MERCHANT_ORDER_ID.replace("_at_", "@")
+    user_db_data = db.get_user(user_email)
+    db.save_user(
+        user_email,
+        rate="izuchu",
+        files=user_db_data["files"],
+        helped=user_db_data["helped"],
     )
 
-  user_email = MERCHANT_ORDER_ID.replace("_at_", "@")
-  user_db_data = db.get_user(user_email)
-  db.save_user(
-      user_email,
-      rate="izuchu",
-      files=user_db_data["files"],
-      helped=user_db_data["helped"],
-  )
-
-  return HTMLResponse(content="YES", status_code=200)
+    return HTMLResponse(content="YES", status_code=200)
 
 
 # ==========================================
-# 4. NASTROYKA VIDIMOSTI FAYLA
+# 5. NASTROYKA VIDIMOSTI FAYLA
 # ==========================================
 @app.post("/visibility/{file_id}")
 async def change_file_visibility(
     request: Request, file_id: str, mode: str = Form(...)
 ):
-  user = request.session.get("user")
-  if not user:
-    raise HTTPException(status_code=401, detail="Avtorizuytes")
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Avtorizuytes")
 
-  user_email = user.get("email", "unknown@user")
-  drive_service = get_drive_service()
-  if not drive_service:
-    raise HTTPException(status_code=500, detail="Google Drive ne nastroen")
+    user_email = user.get("email", "unknown@user")
+    drive_service = get_drive_service()
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Google Drive ne nastroen")
 
-  try:
-    file_info = (
-        drive_service.files()
-        .get(fileId=file_id, fields="appProperties, permissions")
-        .execute()
-    )
-    file_owner = file_info.get("appProperties", {}).get("owner")
+    try:
+        file_info = (
+            drive_service.files()
+            .get(fileId=file_id, fields="appProperties, permissions")
+            .execute()
+        )
+        file_owner = file_info.get("appProperties", {}).get("owner")
 
-    if file_owner != user_email:
-      raise HTTPException(status_code=403, detail="Dostup zapreshchen!")
+        if file_owner != user_email:
+            raise HTTPException(status_code=403, detail="Dostup zapreshchen!")
 
-    permissions = file_info.get("permissions", [])
-    for perm in permissions:
-      if perm.get("type") == "anyone":
-        drive_service.permissions().delete(
-            fileId=file_id, permissionId=perm["id"]
-        ).execute()
+        permissions = file_info.get("permissions", [])
+        for perm in permissions:
+            if perm.get("type") == "anyone":
+                drive_service.permissions().delete(
+                    fileId=file_id, permissionId=perm["id"]
+                ).execute()
 
-    if mode == "link":
-      drive_service.permissions().create(
-          fileId=file_id,
-          body={
-              "type": "anyone",
-              "role": "reader",
-              "allowFileDiscovery": False,
-          },
-      ).execute()
-    elif mode == "public":
-      drive_service.permissions().create(
-          fileId=file_id,
-          body={"type": "anyone", "role": "reader", "allowFileDiscovery": True},
-      ).execute()
+        if mode == "link":
+            drive_service.permissions().create(
+                fileId=file_id,
+                body={
+                    "type": "anyone",
+                    "role": "reader",
+                    "allowFileDiscovery": False,
+                },
+            ).execute()
+        elif mode == "public":
+            drive_service.permissions().create(
+                fileId=file_id,
+                body={"type": "anyone", "role": "reader", "allowFileDiscovery": True},
+            ).execute()
 
-  except Exception as e:
-    raise HTTPException(
-        status_code=500, detail=f"Oshibka izmeneniya dostupa: {e}"
-    )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Oshibka izmeneniya dostupa: {e}"
+        )
 
-  return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
 
 
 # ==========================================
-# 5. ZAGRUZKA V GOOGLE DRIVE
+# 6. ZAGRUZKA V GOOGLE DRIVE
 # ==========================================
 @app.post("/upload")
 async def upload_file(request: Request, file: UploadFile = File(...)):
-  user = request.session.get("user")
-  if not user:
-    return RedirectResponse(url="/", status_code=303)
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse(url="/", status_code=303)
 
-  user_email = user.get("email", "unknown@user")
-  drive_service = get_drive_service()
-  if not drive_service:
-    raise HTTPException(status_code=500, detail="Google Drive API ne nastroen")
+    user_email = user.get("email", "unknown@user")
+    drive_service = get_drive_service()
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Google Drive API ne nastroen")
 
-  contents = await file.read()
+    contents = await file.read()
 
-  file_metadata = {
-      "name": file.filename,
-      "parents": [GOOGLE_DRIVE_FOLDER_ID],
-      "appProperties": {"owner": user_email},
-  }
+    file_metadata = {
+        "name": file.filename,
+        "parents": [GOOGLE_DRIVE_FOLDER_ID],
+        "appProperties": {"owner": user_email},
+    }
 
-  media = MediaIoBaseUpload(
-      io.BytesIO(contents), mimetype=file.content_type, resumable=True
-  )
-
-  try:
-    drive_service.files().create(
-        body=file_metadata, media_body=media, fields="id"
-    ).execute()
-  except Exception as e:
-    raise HTTPException(status_code=500, detail=f"Oshibka zagruzki: {e}")
-
-  user_db_data = db.get_user(user_email)
-  db.save_user(
-      user_email,
-      rate=user_db_data["rate"],
-      files=user_db_data["files"] + 1,
-      helped=user_db_data["helped"],
-  )
-
-  return RedirectResponse(url="/", status_code=303)
-
-
-# ==========================================
-# 6. SKACHIVANIYE
-# ==========================================
-@app.get("/download/{file_id}")
-async def download_file(request: Request, file_id: str):
-  user = request.session.get("user")
-  user_email = user.get("email", "unknown@user") if user else None
-
-  drive_service = get_drive_service()
-  if not drive_service:
-    raise HTTPException(status_code=500, detail="Google Drive ne nastroen")
-
-  try:
-    file_info = (
-        drive_service.files()
-        .get(fileId=file_id, fields="name, appProperties, permissions")
-        .execute()
+    media = MediaIoBaseUpload(
+        io.BytesIO(contents), mimetype=file.content_type, resumable=True
     )
-    file_owner = file_info.get("appProperties", {}).get("owner")
-    permissions = file_info.get("permissions", [])
 
-    is_anyone_allowed = any(p.get("type") == "anyone" for p in permissions)
-
-    if not is_anyone_allowed and (not user_email or file_owner != user_email):
-      raise HTTPException(status_code=403, detail="Dostup zapreshchen!")
-
-    request_drive = drive_service.files().get_media(fileId=file_id)
-    file_stream = io.BytesIO()
-    downloader = MediaIoBaseDownload(file_stream, request_drive)
-
-    done = False
-    while not done:
-      _, done = downloader.next_chunk()
-
-    file_stream.seek(0)
-    return StreamingResponse(
-        file_stream,
-        media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f"attachment; filename={file_info['name']}"
-        },
-    )
-  except Exception as e:
-    raise HTTPException(status_code=500, detail=f"Oshibka skachivaniya: {e}")
-
-
-# ==========================================
-# 7. UDALENIYE
-# ==========================================
-@app.get("/delete/{file_id}")
-async def delete_file(request: Request, file_id: str):
-  user = request.session.get("user")
-  if not user:
-    raise HTTPException(status_code=401, detail="Avtorizuytes")
-
-  user_email = user.get("email", "unknown@user")
-  drive_service = get_drive_service()
-  if not drive_service:
-    raise HTTPException(status_code=500, detail="Google Drive ne nastroen")
-
-  try:
-    file_info = (
-        drive_service.files()
-        .get(fileId=file_id, fields="appProperties")
-        .execute()
-    )
-    file_owner = file_info.get("appProperties", {}).get("owner")
-
-    if file_owner != user_email:
-      raise HTTPException(status_code=403, detail="Oshibka dostupa!")
-
-    drive_service.files().delete(fileId=file_id).execute()
+    try:
+        drive_service.files().create(
+            body=file_metadata, media_body=media, fields="id"
+        ).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Oshibka zagruzki: {e}")
 
     user_db_data = db.get_user(user_email)
-    new_count = max(0, user_db_data["files"] - 1)
     db.save_user(
         user_email,
         rate=user_db_data["rate"],
-        files=new_count,
+        files=user_db_data["files"] + 1,
         helped=user_db_data["helped"],
     )
-  except Exception as e:
-    raise HTTPException(status_code=500, detail=f"Oshibka udaleniya: {e}")
 
-  return RedirectResponse(url="/", status_code=303)
+    return RedirectResponse(url="/", status_code=303)
 
 
 # ==========================================
-# 8. OAUTH AVTORIZACIYA
+# 7. SKACHIVANIYE
+# ==========================================
+@app.get("/download/{file_id}")
+async def download_file(request: Request, file_id: str):
+    user = request.session.get("user")
+    user_email = user.get("email", "unknown@user") if user else None
+
+    drive_service = get_drive_service()
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Google Drive ne nastroen")
+
+    try:
+        file_info = (
+            drive_service.files()
+            .get(fileId=file_id, fields="name, appProperties, permissions")
+            .execute()
+        )
+        file_owner = file_info.get("appProperties", {}).get("owner")
+        permissions = file_info.get("permissions", [])
+
+        is_anyone_allowed = any(p.get("type") == "anyone" for p in permissions)
+
+        if not is_anyone_allowed and (not user_email or file_owner != user_email):
+            raise HTTPException(status_code=403, detail="Dostup zapreshchen!")
+
+        request_drive = drive_service.files().get_media(fileId=file_id)
+        file_stream = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_stream, request_drive)
+
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        file_stream.seek(0)
+        return StreamingResponse(
+            file_stream,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename={file_info['name']}"
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Oshibka skachivaniya: {e}")
+
+
+# ==========================================
+# 8. UDALENIYE
+# ==========================================
+@app.get("/delete/{file_id}")
+async def delete_file(request: Request, file_id: str):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Avtorizuytes")
+
+    user_email = user.get("email", "unknown@user")
+    drive_service = get_drive_service()
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Google Drive ne nastroen")
+
+    try:
+        file_info = (
+            drive_service.files()
+            .get(fileId=file_id, fields="appProperties")
+            .execute()
+        )
+        file_owner = file_info.get("appProperties", {}).get("owner")
+
+        if file_owner != user_email:
+            raise HTTPException(status_code=403, detail="Oshibka dostupa!")
+
+        drive_service.files().delete(fileId=file_id).execute()
+
+        user_db_data = db.get_user(user_email)
+        new_count = max(0, user_db_data["files"] - 1)
+        db.save_user(
+            user_email,
+            rate=user_db_data["rate"],
+            files=new_count,
+            helped=user_db_data["helped"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Oshibka udaleniya: {e}")
+
+    return RedirectResponse(url="/", status_code=303)
+
+
+# ==========================================
+# 9. OAUTH AVTORIZACIYA
 # ==========================================
 @app.get("/login/google")
 async def login_google(request: Request):
-  return await oauth.google.authorize_redirect(
-      request, request.url_for("auth_google")
-  )
+    return await oauth.google.authorize_redirect(
+        request, request.url_for("auth_google")
+    )
 
 
 @app.get("/auth/callback")
 async def auth_google(request: Request):
-  token = await oauth.google.authorize_access_token(request)
-  request.session["user"] = dict(token.get("userinfo"))
-  request.session["provider"] = "google"
-  return RedirectResponse(url="/")
+    token = await oauth.google.authorize_access_token(request)
+    request.session["user"] = dict(token.get("userinfo"))
+    request.session["provider"] = "google"
+    return RedirectResponse(url="/")
 
 
 @app.get("/login/github")
 async def login_github(request: Request):
-  redirect_uri = request.url_for("auth_github")
-  return await oauth.github.authorize_redirect(request, redirect_uri)
+    redirect_uri = request.url_for("auth_github")
+    return await oauth.github.authorize_redirect(request, redirect_uri)
 
 
 @app.get("/auth/github/callback")
 async def auth_github(request: Request):
-  token = await oauth.github.authorize_access_token(request)
-  resp = await oauth.github.get("user", token=token)
-  profile = resp.json()
+    token = await oauth.github.authorize_access_token(request)
+    resp = await oauth.github.get("user", token=token)
+    profile = resp.json()
 
-  email = profile.get("email")
-  if not email:
-    emails_resp = await oauth.github.get("user/emails", token=token)
-    emails = emails_resp.json()
-    primary_email = next(
-        (e["email"] for e in emails if e.get("primary")), None
-    )
-    email = primary_email or (
-        emails[0]["email"] if emails else f"{profile['login']}@github.com"
-    )
+    email = profile.get("email")
+    if not email:
+        emails_resp = await oauth.github.get("user/emails", token=token)
+        emails = emails_resp.json()
+        primary_email = next(
+            (e["email"] for e in emails if e.get("primary")), None
+        )
+        email = primary_email or (
+            emails[0]["email"] if emails else f"{profile['login']}@github.com"
+        )
 
-  request.session["user"] = {
-      "name": profile.get("name") or profile.get("login"),
-      "email": email,
-      "picture": profile.get("avatar_url"),
-  }
-  request.session["provider"] = "github"
-  return RedirectResponse(url="/")
+    request.session["user"] = {
+        "name": profile.get("name") or profile.get("login"),
+        "email": email,
+        "picture": profile.get("avatar_url"),
+    }
+    request.session["provider"] = "github"
+    return RedirectResponse(url="/")
 
 
 # --- DONATIONALERTS OAUTH ---
 @app.get("/login/donationalerts")
 async def login_donationalerts():
-  auth_url = (
-      f"https://www.donationalerts.com/oauth/authorize"
-      f"?client_id={DA_CLIENT_ID}"
-      f"&redirect_uri={DA_REDIRECT_URI}"
-      f"&response_type=code"
-      f"&scope=oauth-user-show"
-  )
-  return RedirectResponse(auth_url)
+    auth_url = (
+        f"https://www.donationalerts.com/oauth/authorize"
+        f"?client_id={DA_CLIENT_ID}"
+        f"&redirect_uri={DA_REDIRECT_URI}"
+        f"&response_type=code"
+        f"&scope=oauth-user-show"
+    )
+    return RedirectResponse(auth_url)
 
 
 @app.get("/auth/donationalerts/callback")
 async def auth_donationalerts(
     request: Request, code: str = None, error: str = None
 ):
-  if error or not code:
-    raise HTTPException(status_code=400, detail="Oshibka DA")
+    if error or not code:
+        raise HTTPException(status_code=400, detail="Oshibka DA")
 
-  async with httpx.AsyncClient() as client:
-    token_resp = await client.post(
-        "https://www.donationalerts.com/oauth/token",
-        data={
-            "grant_type": "authorization_code",
-            "client_id": DA_CLIENT_ID,
-            "client_secret": DA_CLIENT_SECRET,
-            "redirect_uri": DA_REDIRECT_URI,
-            "code": code,
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            "https://www.donationalerts.com/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": DA_CLIENT_ID,
+                "client_secret": DA_CLIENT_SECRET,
+                "redirect_uri": DA_REDIRECT_URI,
+                "code": code,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        if token_resp.status_code != 200:
+            raise HTTPException(
+                status_code=token_resp.status_code, detail="Oshibka tokena DA"
+            )
+
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+
+        user_resp = await client.get(
+            "https://www.donationalerts.com/api/v1/user/oauth",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        if user_resp.status_code != 200:
+            raise HTTPException(status_code=user_resp.status_code, detail="Oshibka DA")
+
+        profile = user_resp.json().get("data", {})
+
+    email = (
+        profile.get("email")
+        or f"{profile.get('code', 'user')}@donationalerts.local"
     )
 
-    if token_resp.status_code != 200:
-      raise HTTPException(
-          status_code=token_resp.status_code, detail="Oshibka tokena DA"
-      )
-
-    token_data = token_resp.json()
-    access_token = token_data.get("access_token")
-
-    user_resp = await client.get(
-        "https://www.donationalerts.com/api/v1/user/oauth",
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-
-    if user_resp.status_code != 200:
-      raise HTTPException(status_code=user_resp.status_code, detail="Oshibka DA")
-
-    profile = user_resp.json().get("data", {})
-
-  email = (
-      profile.get("email")
-      or f"{profile.get('code', 'user')}@donationalerts.local"
-  )
-
-  request.session["user"] = {
-      "name": profile.get("name"),
-      "email": email,
-      "picture": profile.get("avatar"),
-  }
-  request.session["provider"] = "donationalerts"
-  return RedirectResponse(url="/")
+    request.session["user"] = {
+        "name": profile.get("name"),
+        "email": email,
+        "picture": profile.get("avatar"),
+    }
+    request.session["provider"] = "donationalerts"
+    return RedirectResponse(url="/")
 
 
 @app.get("/logout")
 async def logout(request: Request):
-  request.session.clear()
-  return RedirectResponse(url="/")
+    request.session.clear()
+    return RedirectResponse(url="/")
 
 
 # ==========================================
-# 9. FK-VERIFY.HTML
+# 10. FK-VERIFY.HTML
 # ==========================================
 @app.get("/fk-verify.html")
 async def get_fk_verify():
-  file_path = os.path.join(os.path.dirname(__file__), "fk-verify.html")
+    file_path = os.path.join(os.path.dirname(__file__), "fk-verify.html")
 
-  if not os.path.exists(file_path):
-    raise HTTPException(
-        status_code=404, detail="Fayl fk-verify.html ne nayden!"
-    )
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404, detail="Fayl fk-verify.html ne nayden!"
+        )
 
-  return FileResponse(file_path, media_type="text/html")
+    return FileResponse(file_path, media_type="text/html")
 
 
 if __name__ == "__main__":
-  import uvicorn
+    import uvicorn
 
-  port = int(os.environ.get("PORT", 8000))
-  uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
