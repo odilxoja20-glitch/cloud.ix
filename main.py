@@ -131,39 +131,46 @@ TOKEN_FILE = "token.json"
 GOOGLE_DRIVE_FOLDER_ID = "1rLqz7WIMqq4piCmuMbs3v4jTGk1IY9KM"
 
 
+import json
+from google.oauth2.credentials import Credentials
+
+
+import json
+
+
 def get_drive_service():
   creds = None
-  if os.path.exists(TOKEN_FILE):
-    try:
-      creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    except Exception:
-      creds = None
+  token_json_str = os.environ.get("GOOGLE_TOKEN_JSON")
 
+  # 1. Загружаем credentials напрямую из .env
+  if token_json_str:
+    try:
+      token_data = json.loads(token_json_str)
+      creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+    except Exception as e:
+      print(f"Ошибка парсинга GOOGLE_TOKEN_JSON из .env: {e}")
+
+  # 2. Если токен истёк — автоматически обновляем через refresh_token
   if not creds or not creds.valid:
     if creds and creds.expired and creds.refresh_token:
       try:
         creds.refresh(GoogleRequest())
-      except Exception:
+      except Exception as e:
+        print(f"Ошибка обновления токена: {e}")
         creds = None
 
-    if not creds:
-      if not os.path.exists(CLIENT_SECRETS_FILE):
-        print("Fayl client_secret.json ne nayden!")
-        return None
-      flow = InstalledAppFlow.from_client_secrets_file(
-          CLIENT_SECRETS_FILE, SCOPES
-      )
-      creds = flow.run_local_server(port=0)
-
-    with open(TOKEN_FILE, "w", encoding="utf-8") as token:
-      token.write(creds.to_json())
+  if not creds:
+    print(
+        "Не удалось инициализировать Google Credentials! Проверь"
+        " GOOGLE_TOKEN_JSON в .env"
+    )
+    return None
 
   try:
     return build("drive", "v3", credentials=creds)
   except Exception as e:
-    print(f"Oshibka Drive API: {e}")
+    print(f"Ошибка запуска Google Drive API: {e}")
     return None
-
 
 PLANS = {
     "free": {"name": "Bazovyy", "bytes": 1 * 1024 * 1024 * 1024, "label": "1 GB"},
