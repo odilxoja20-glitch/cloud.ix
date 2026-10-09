@@ -16,21 +16,20 @@ from fastapi.responses import (
 )
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 import httpx
 from starlette.middleware.sessions import SessionMiddleware
 
-# Zagruzkayem peremennye okruzheniya iz .env fayla
+# Zagruzka peremennykh okruzheniya iz .env
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(title="CloudIX")
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "super-secret-key-12345")
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
-# Konfiguraciya klyuchey cherez os.environ
+# Keys OAuth
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 
@@ -39,11 +38,12 @@ GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 
 DA_CLIENT_ID = os.environ.get("DA_CLIENT_ID", "21741")
 DA_CLIENT_SECRET = os.environ.get("DA_CLIENT_SECRET", "")
-DA_REDIRECT_URI = "http://127.0.0.1:8000/auth/donationalerts/callback"
+DA_REDIRECT_URI = os.environ.get(
+    "DA_REDIRECT_URI", "https://sc5mails.space/auth/donationalerts/callback"
+)
 
-# FREEKASSA CONFIG
-FK_MERCHANT_ID = os.environ.get("FK_MERCHANT_ID", "21741")
-FK_SECRET1 = os.environ.get("sk-1", os.environ.get("FK_SECRET1", ""))
+# FREEKASSA CONFIG (sk-2 dlya proverki callback)
+FK_MERCHANT_ID = os.environ.get("FK_MERCHANT_ID", "76722")
 FK_SECRET2 = os.environ.get("sk-2", os.environ.get("FK_SECRET2", ""))
 
 oauth = OAuth()
@@ -132,7 +132,6 @@ db = TextDatabase()
 # 2. GOOGLE DRIVE INTEGRATION
 # ==========================================
 SCOPES = ["https://www.googleapis.com/auth/drive"]
-CLIENT_SECRETS_FILE = "client_secret.json"
 GOOGLE_DRIVE_FOLDER_ID = "1rLqz7WIMqq4piCmuMbs3v4jTGk1IY9KM"
 
 
@@ -145,7 +144,7 @@ def get_drive_service():
       token_data = json.loads(token_json_str)
       creds = Credentials.from_authorized_user_info(token_data, SCOPES)
     except Exception as e:
-      print(f"Oshibka parsina GOOGLE_TOKEN_JSON iz .env: {e}")
+      print(f"Oshibka parsinga GOOGLE_TOKEN_JSON iz .env: {e}")
 
   if not creds or not creds.valid:
     if creds and creds.expired and creds.refresh_token:
@@ -195,6 +194,7 @@ async def homepage(request: Request):
         <html lang="ru">
         <head>
             <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>CloudIX — Vkhod</title>
             <script src="https://cdn.tailwindcss.com"></script>
         </head>
@@ -231,7 +231,7 @@ async def homepage(request: Request):
   status_param = request.query_params.get("status")
   status_notice = ""
   if status_param == "success":
-    status_notice = '<div class="bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 p-4 rounded-xl text-xs mb-4"><b>Oplata uspeshno proviedena!</b> Tarif obnovlen.</div>'
+    status_notice = '<div class="bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 p-4 rounded-xl text-xs mb-4"><b>Oplata uspeshno provedena!</b> Tarif obnovlen.</div>'
   elif status_param == "fail":
     status_notice = '<div class="bg-red-500/20 border border-red-500/50 text-red-300 p-4 rounded-xl text-xs mb-4"><b>Oshibka oplaty ili otmena.</b> Poprobuyte snova.</div>'
 
@@ -276,7 +276,7 @@ async def homepage(request: Request):
     except Exception as e:
       error_notice = f'<div class="bg-red-500/20 border border-red-500/50 text-red-300 p-4 rounded-xl text-xs mb-4"><b>Oshibka Google Drive API:</b> {str(e)}</div>'
   else:
-    error_notice = '<div class="bg-amber-500/20 border border-amber-500/50 text-amber-300 p-4 rounded-xl text-xs mb-4">Google Drive API ne nastroyen.</div>'
+    error_notice = '<div class="bg-amber-500/20 border border-amber-500/50 text-amber-300 p-4 rounded-xl text-xs mb-4">Google Drive API ne nastroen.</div>'
 
   used_mb = round(total_used_bytes / (1024 * 1024), 2)
   percent = (
@@ -345,6 +345,19 @@ async def homepage(request: Request):
       )
   )
 
+  # IFRAME VIDZHET DLYA TARIFA IZUCHU
+  izuchu_action_html = (
+      '<button disabled class="mt-4 w-full text-xs py-2.5 px-3 rounded-lg'
+      ' font-semibold bg-slate-700 text-slate-500 cursor-not-allowed">Tekushchiy'
+      " tarif</button>"
+      if plan_key == "izuchu"
+      else """
+      <div class="mt-4 flex justify-center">
+          <iframe src="https://widgets.freekassa.net?type=payment-button&currency=RUB&destination=Тариф Изучу&theme=light&default_amount=18&button_text=Оплатить&button_size=36px&shopId=76722&s=14df14d2f7e568e2e5e921a49ca7f17d" width="300" height="50" frameborder="0"></iframe>
+      </div>
+  """
+  )
+
   user_avatar = user.get("picture") or "https://via.placeholder.com/48"
   user_name = user.get("name") or user_email.split("@")[0]
 
@@ -353,6 +366,7 @@ async def homepage(request: Request):
     <html lang="ru">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>CloudIX — Panel upravleniya</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
@@ -384,24 +398,21 @@ async def homepage(request: Request):
                             <div class="font-bold text-base text-slate-200">Bazovyy (Free)</div>
                             <div class="text-xs text-slate-400 mt-1">1 GB diskovogo prostranstva</div>
                         </div>
-                        <button type="submit" {"disabled" if plan_key == "free" else ""} class="mt-4 w-full text-xs py-2 px-3 rounded-lg font-semibold {"bg-slate-700 text-slate-500 cursor-not-allowed" if plan_key == "free" else "bg-blue-600 hover:bg-blue-500 text-white transition"}">
-                            {"Tekushchiy tarif" if plan_key == "free" else "Vybrakh Bazovyy"}
+                        <button type="submit" {"disabled" if plan_key == "free" else ""} class="mt-4 w-full text-xs py-2.5 px-3 rounded-lg font-semibold {"bg-slate-700 text-slate-500 cursor-not-allowed" if plan_key == "free" else "bg-blue-600 hover:bg-blue-500 text-white transition"}">
+                            {"Tekushchiy tarif" if plan_key == "free" else "Vybrat Bazovyy"}
                         </button>
                     </form>
 
-                    <form action="/select-plan" method="post" class="bg-slate-800/60 p-4 rounded-xl border border-emerald-500/30 flex flex-col justify-between">
-                        <input type="hidden" name="plan" value="izuchu">
+                    <div class="bg-slate-800/60 p-4 rounded-xl border border-emerald-500/30 flex flex-col justify-between">
                         <div>
                             <div class="font-bold text-base text-emerald-400 flex items-center justify-between">
                                 Izuchu
                                 <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-normal">PRO</span>
                             </div>
-                            <div class="text-xs text-slate-400 mt-1">15 GB diskovogo prostranstva (Kupit)</div>
+                            <div class="text-xs text-slate-400 mt-1">15 GB diskovogo prostranstva (18 ₽)</div>
                         </div>
-                        <button type="submit" {"disabled" if plan_key == "izuchu" else ""} class="mt-4 w-full text-xs py-2 px-3 rounded-lg font-semibold {"bg-slate-700 text-slate-500 cursor-not-allowed" if plan_key == "izuchu" else "bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-lg shadow-emerald-500/20"}">
-                            {"Tekushchiy tarif" if plan_key == "izuchu" else "Oplatit (FreeKassa)"}
-                        </button>
-                    </form>
+                        {izuchu_action_html}
+                    </div>
                 </div>
             </div>
 
@@ -437,7 +448,6 @@ async def homepage(request: Request):
     """
 
 
-# Obrabotka POST-zaprosa ot FreeKassa pri perenapravlenii polzovatelya na URL uspeha/neudachi
 @app.post("/")
 async def homepage_post(request: Request):
   status_param = request.query_params.get("status", "success")
@@ -445,7 +455,7 @@ async def homepage_post(request: Request):
 
 
 # ==========================================
-# 3. SMENA TARIFA I PEREKHOD NA FREEKASSA
+# 3. SMENA TARIFA
 # ==========================================
 @app.post("/select-plan")
 async def select_plan(request: Request, plan: str = Form(...)):
@@ -463,32 +473,12 @@ async def select_plan(request: Request, plan: str = Form(...)):
         files=user_db_data["files"],
         helped=user_db_data["helped"],
     )
-    return RedirectResponse(url="/", status_code=303)
-
-  elif plan == "izuchu":
-    amount = "100.00"  # Tsena tarifa v valyute
-    currency = "RUB"
-    order_id = user_email.replace("@", "_at_")
-
-    # Podpis 1 (sk-1): md5(merchant_id:amount:secret1:currency:order_id)
-    sign_str = f"{FK_MERCHANT_ID}:{amount}:{FK_SECRET1}:{currency}:{order_id}"
-    sign = hashlib.md5(sign_str.encode()).hexdigest()
-
-    fk_url = (
-        f"https://pay.freekassa.ru/?"
-        f"m={FK_MERCHANT_ID}&"
-        f"oa={amount}&"
-        f"currency={currency}&"
-        f"o={order_id}&"
-        f"s={sign}"
-    )
-    return RedirectResponse(url=fk_url, status_code=303)
 
   return RedirectResponse(url="/", status_code=303)
 
 
 # ==========================================
-# FREEKASSA CALLBACK (URL OPOVESHCHENIYA)
+# FREEKASSA CALLBACK (OPOVESHCHENIYE)
 # ==========================================
 @app.post("/pay/callback")
 async def pay_callback(
@@ -498,7 +488,7 @@ async def pay_callback(
     MERCHANT_ORDER_ID: str = Form(...),
     SIGN: str = Form(...),
 ):
-  # Proverka podpisi secret 2 (sk-2): md5(MERCHANT_ID:AMOUNT:secret2:MERCHANT_ORDER_ID)
+  # Proverka sk-2
   expected_sign_str = f"{MERCHANT_ID}:{AMOUNT}:{FK_SECRET2}:{MERCHANT_ORDER_ID}"
   expected_sign = hashlib.md5(expected_sign_str.encode()).hexdigest()
 
@@ -507,10 +497,7 @@ async def pay_callback(
         status_code=400, detail="Oshibka podpisi FreeKassa (SIGN)"
     )
 
-  # Vosstanavlivaem email polzovatelya iz order_id
   user_email = MERCHANT_ORDER_ID.replace("_at_", "@")
-
-  # Obnovlyayem tarif v bd.txt
   user_db_data = db.get_user(user_email)
   db.save_user(
       user_email,
@@ -519,7 +506,6 @@ async def pay_callback(
       helped=user_db_data["helped"],
   )
 
-  # FreeKassa trebuet strogo otvet "YES"
   return HTMLResponse(content="YES", status_code=200)
 
 
@@ -548,10 +534,7 @@ async def change_file_visibility(
     file_owner = file_info.get("appProperties", {}).get("owner")
 
     if file_owner != user_email:
-      raise HTTPException(
-          status_code=403,
-          detail="Tolko vladлец fayla mozhet menyat rezhim dostupa!",
-      )
+      raise HTTPException(status_code=403, detail="Dostup zapreshchen!")
 
     permissions = file_info.get("permissions", [])
     for perm in permissions:
@@ -577,7 +560,7 @@ async def change_file_visibility(
 
   except Exception as e:
     raise HTTPException(
-        status_code=500, detail=f"Oshibka izmeneniya dostupa fayla: {e}"
+        status_code=500, detail=f"Oshibka izmeneniya dostupa: {e}"
     )
 
   return RedirectResponse(url="/", status_code=303)
@@ -595,9 +578,7 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
   user_email = user.get("email", "unknown@user")
   drive_service = get_drive_service()
   if not drive_service:
-    raise HTTPException(
-        status_code=500, detail="Google Drive API ne nastroen!"
-    )
+    raise HTTPException(status_code=500, detail="Google Drive API ne nastroen")
 
   contents = await file.read()
 
@@ -616,9 +597,7 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
         body=file_metadata, media_body=media, fields="id"
     ).execute()
   except Exception as e:
-    raise HTTPException(
-        status_code=500, detail=f"Oshibka zagruzki v Google Drive: {e}"
-    )
+    raise HTTPException(status_code=500, detail=f"Oshibka zagruzki: {e}")
 
   user_db_data = db.get_user(user_email)
   db.save_user(
@@ -655,10 +634,7 @@ async def download_file(request: Request, file_id: str):
     is_anyone_allowed = any(p.get("type") == "anyone" for p in permissions)
 
     if not is_anyone_allowed and (not user_email or file_owner != user_email):
-      raise HTTPException(
-          status_code=403,
-          detail="Dostup zapreshchen! Fayl imeet status 'Privatnyy'.",
-      )
+      raise HTTPException(status_code=403, detail="Dostup zapreshchen!")
 
     request_drive = drive_service.files().get_media(fileId=file_id)
     file_stream = io.BytesIO()
@@ -677,9 +653,7 @@ async def download_file(request: Request, file_id: str):
         },
     )
   except Exception as e:
-    raise HTTPException(
-        status_code=500, detail=f"Oshibka skachivaniya fayla: {e}"
-    )
+    raise HTTPException(status_code=500, detail=f"Oshibka skachivaniya: {e}")
 
 
 # ==========================================
@@ -705,10 +679,7 @@ async def delete_file(request: Request, file_id: str):
     file_owner = file_info.get("appProperties", {}).get("owner")
 
     if file_owner != user_email:
-      raise HTTPException(
-          status_code=403,
-          detail="Oshibka dostupa! Udalit fayl mozhet tolko vladлец.",
-      )
+      raise HTTPException(status_code=403, detail="Oshibka dostupa!")
 
     drive_service.files().delete(fileId=file_id).execute()
 
@@ -721,9 +692,7 @@ async def delete_file(request: Request, file_id: str):
         helped=user_db_data["helped"],
     )
   except Exception as e:
-    raise HTTPException(
-        status_code=500, detail=f"Oshibka udaleniya fayla: {e}"
-    )
+    raise HTTPException(status_code=500, detail=f"Oshibka udaleniya: {e}")
 
   return RedirectResponse(url="/", status_code=303)
 
@@ -796,9 +765,7 @@ async def auth_donationalerts(
     request: Request, code: str = None, error: str = None
 ):
   if error or not code:
-    raise HTTPException(
-        status_code=400, detail=f"Oshibka avtorizacii DonationAlerts: {error}"
-    )
+    raise HTTPException(status_code=400, detail="Oshibka DA")
 
   async with httpx.AsyncClient() as client:
     token_resp = await client.post(
@@ -815,8 +782,7 @@ async def auth_donationalerts(
 
     if token_resp.status_code != 200:
       raise HTTPException(
-          status_code=token_resp.status_code,
-          detail=f"Oshibka polucheniya tokena DA: {token_resp.text}",
+          status_code=token_resp.status_code, detail="Oshibka tokena DA"
       )
 
     token_data = token_resp.json()
@@ -828,9 +794,7 @@ async def auth_donationalerts(
     )
 
     if user_resp.status_code != 200:
-      raise HTTPException(
-          status_code=user_resp.status_code, detail="Oshibka profilya DA"
-      )
+      raise HTTPException(status_code=user_resp.status_code, detail="Oshibka DA")
 
     profile = user_resp.json().get("data", {})
 
@@ -855,7 +819,7 @@ async def logout(request: Request):
 
 
 # ==========================================
-# ROUT DLYA OTKRYTIYA FK-VERIFY.HTML
+# 9. FK-VERIFY.HTML
 # ==========================================
 @app.get("/fk-verify.html")
 async def get_fk_verify():
@@ -863,8 +827,7 @@ async def get_fk_verify():
 
   if not os.path.exists(file_path):
     raise HTTPException(
-        status_code=404,
-        detail="Fayl fk-verify.html ne nayden v papke proekta!",
+        status_code=404, detail="Fayl fk-verify.html ne nayden!"
     )
 
   return FileResponse(file_path, media_type="text/html")
